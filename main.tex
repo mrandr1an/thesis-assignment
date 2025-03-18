@@ -1,0 +1,74 @@
+\documentclass[a3paper]{article}
+\usepackage{graphicx}
+
+% Fonts
+\usepackage{fontspec}
+\usepackage{unicode-math}
+\setmainfont[Ligatures=TeX]{Libertinus Serif}
+% \setmathfont[Ligatures=TeX]{Libertinus Math}
+\setsansfont[Ligatures=TeX]{Libertinus Sans}
+\setmonofont[Ligatures=TeX,Scale=0.95]{Libertinus Mono}
+
+% color
+\usepackage{xcolor}
+
+% Links
+\usepackage{hyperref}
+\hypersetup
+{
+    linktoc=all,
+    colorlinks,
+    linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black}
+}
+
+% Custom Lists
+\usepackage{enumitem}
+
+\usepackage{listings, listings-rust}
+\definecolor{backcolor}{rgb}{0.95,0.95,0.95}
+
+\usepackage{forest}
+
+% Bibliography
+\usepackage[
+backend=biber,
+style=ieee,
+sorting=ynt
+]{biblatex}
+\bibliography{/home/chris/Documents/Bibliography/references}
+
+% Math
+\usepackage{amsmath}
+\newcommand*\BitAnd{\mathbin{\&}}
+\newcommand*\BitOr{\mathbin{|}}
+\newcommand*\ShiftLeft{\ll}
+\newcommand*\ShiftRight{\gg}
+\newcommand*\BitNeg{\ensuremath{\mathord{\sim}}}
+
+\usepackage{subfiles} % Best loaded last in the preamble
+
+\newcommand{\figref}[1]{(βλ. \hyperref[#1]{Σχήμα~\ref{#1}})}
+
+\begin{document}
+
+\subfile{frontpage}
+\newpage
+\subfile{toc}
+\newpage
+\subfile{abstract}
+\newpage
+
+\include{sections/introduction/introduction}
+\include{sections/rust/rust}
+
+\newpage
+
+\appendix
+
+\newpage
+
+\printbibliography
+
+\end{document}

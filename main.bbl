@@ -1,0 +1,110 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.2 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{ynt/global//global/global}
+    \entry{ann_marie_corvin_world_nodate}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=12d8f95327c11f367c7c77721935af6a}{%
+           family={{Ann Marie Corvin}},
+           familyi={A\bibinitperiod}}}%
+      }
+      \strng{namehash}{12d8f95327c11f367c7c77721935af6a}
+      \strng{fullhash}{12d8f95327c11f367c7c77721935af6a}
+      \strng{bibnamehash}{12d8f95327c11f367c7c77721935af6a}
+      \strng{authorbibnamehash}{12d8f95327c11f367c7c77721935af6a}
+      \strng{authornamehash}{12d8f95327c11f367c7c77721935af6a}
+      \strng{authorfullhash}{12d8f95327c11f367c7c77721935af6a}
+      \field{sortinit}{9}
+      \field{sortinithash}{0a5ebc79d83c96b6579069544c73c7d4}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Tech Informed}
+      \field{title}{World in {Disruption}: {Trust} in {Rust}}
+      \field{urlday}{15}
+      \field{urlmonth}{2}
+      \field{urlyear}{2025}
+      \field{urldateera}{ce}
+      \verb{urlraw}
+      \verb https://techinformed.com/world-in-disruption-trust-in-rust/
+      \endverb
+      \verb{url}
+      \verb https://techinformed.com/world-in-disruption-trust-in-rust/
+      \endverb
+    \endentry
+    \entry{catalin_microsoft_nodate}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=6880b073191cd724412e1566dfde029d}{%
+           family={Catalin},
+           familyi={C\bibinitperiod},
+           given={Cimpanu},
+           giveni={C\bibinitperiod}}}%
+      }
+      \strng{namehash}{6880b073191cd724412e1566dfde029d}
+      \strng{fullhash}{6880b073191cd724412e1566dfde029d}
+      \strng{bibnamehash}{6880b073191cd724412e1566dfde029d}
+      \strng{authorbibnamehash}{6880b073191cd724412e1566dfde029d}
+      \strng{authornamehash}{6880b073191cd724412e1566dfde029d}
+      \strng{authorfullhash}{6880b073191cd724412e1566dfde029d}
+      \field{sortinit}{9}
+      \field{sortinithash}{0a5ebc79d83c96b6579069544c73c7d4}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{zdnet}
+      \field{title}{Microsoft: 70 percent of all security bugs are memory safety issues}
+      \field{urlday}{15}
+      \field{urlmonth}{2}
+      \field{urlyear}{2025}
+      \field{urldateera}{ce}
+      \verb{urlraw}
+      \verb https://www.zdnet.com/article/microsoft-70-percent-of-all-security-bugs-are-memory-safety-issues/
+      \endverb
+      \verb{url}
+      \verb https://www.zdnet.com/article/microsoft-70-percent-of-all-security-bugs-are-memory-safety-issues/
+      \endverb
+    \endentry
+    \entry{thomas_proactive_nodate}{misc}{}
+      \name{author}{1}{}{%
+        {{hash=4818d9119fcc5d4ad6e58f7faf68152c}{%
+           family={Thomas},
+           familyi={T\bibinitperiod},
+           given={Gavin},
+           giveni={G\bibinitperiod}}}%
+      }
+      \strng{namehash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \strng{fullhash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \strng{bibnamehash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \strng{authorbibnamehash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \strng{authornamehash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \strng{authorfullhash}{4818d9119fcc5d4ad6e58f7faf68152c}
+      \field{sortinit}{9}
+      \field{sortinithash}{0a5ebc79d83c96b6579069544c73c7d4}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{journaltitle}{Microsoft}
+      \field{title}{A proactive approach to more secure code}
+      \field{urlday}{15}
+      \field{urlmonth}{2}
+      \field{urlyear}{2025}
+      \field{urldateera}{ce}
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+

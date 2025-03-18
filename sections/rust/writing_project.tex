@@ -1,0 +1,76 @@
+\subsection{Γράφοντας το Project}
+
+Θα δούμε πως η υλοποίηση του Project με βάση το specification που
+έχουμε θέσει είναι ιδιαίτερα απλή. Παρόλα αυτά δεν προσφέρονται βιβλιοθήκες
+για τον HC-SR04 όπως στην περίπτωση του ESP-IDF. Παράλληλα το API της
+βιβλιοθήκης του MQTT είναι πολύ δύσκολα διαχειρήσημο οπότε θα
+χρειαστεί κάποιου είδους βελτίωση χωρίς απαραίτητα να γράψουμε το
+πρωτόκολλο από την αρχή (το οποίο όμως φαίνεται να είναι η ιδανική
+λύση). Με βάση την γνώση που έχουμε δώσει στην εισαγωγή αυτού του
+κεφαλαίου όμως γίνεται ξεκάθαρο πως αυτό δεν αποτελεί πρόβλημα καθώς η
+εκφραστηκότητα της Rust κάνει το γράψιμο κώδικα να φαίνεται σαν πολύ
+οργανική διαδικασία.
+
+Μια επιλογή για να ξεκινήσουμε είναι να δημιουργήσουμε ένα Cargo.toml και
+να θέσουμε τις βιβλιοθήκες που θέλουμε να μεταγλωττίσουμε μαζί με το Project.
+Όμως υπάρχει μια καλύτερη λύση, το \verb|esp-generate --chip esp32c6 my_project|
+δημιουργεί τα απαραίτητα αρχεία με τις βιβλιοθήκες που είναι απαραίτητες ανάλογα με
+τις ρυθμίσεις μας. Προφανώς αν θέλουμε προσθέτουμε κιάλλες μπορούμε είτε από ένα τερματικό
+\verb|cargo add library| είτε με το συντακτικό TOML που έχουμε δείξει παραπάνω.
+Το τελικό directory έχει της εξής δομή:
+
+\begin{figure}[htbp]
+  \centering
+\begin{forest}
+for tree={
+  font=\ttfamily,
+  grow'=0,
+  child anchor=west,
+  parent anchor=south,
+  anchor=west,
+  calign=first,
+  edge path={
+    \noexpand\path [draw, \forestoption{edge}]
+      (!u.south west) +(5pt,0) |- (.child anchor)\forestoption{edge label};
+  },
+  before typesetting nodes={
+    if n=1
+      {insert before={[,phantom]}}
+      {}
+  },
+  fit=band,
+  before computing xy={l=15pt},
+}
+[.
+  [build.rs]
+  [.cargo
+    [config.toml]
+  ]
+  [Cargo.toml]
+  [.gitignore]
+  [rust-toolchain.toml]
+  [src
+    [bin
+      [main.rs]
+    ]
+    [lib.rs]
+  ]
+]
+\end{forest}
+\caption{Project folder structure.}
+\label{fig:project_structure}
+\end{figure}
+
+Το project θα αποτελείτε από δύο δικές μας βιβλιοθήκες που θα είναι υπεύθυνες για:
+
+\begin{enumerate}
+  \item Την λειτουργία του αισθητήρα απόστασης.
+  \item Την λειτουργεία του πρωτόκολλου MQTT.
+\end{enumerate}
+
+\subsubsection{HC-SR04 Driver}
+Hello 
+\subsubsection{MQTT Driver}
+Goodbye
+\subsubsection{Main Program}
+Hellogoodbye
