@@ -83,7 +83,7 @@ pub struct HCSR04<'h, Clock: Timer> {
 
 Ήδη αρκετά κομμάτια στον κώδικα έχουν ιδιαίτερο ενδιαφέρον.
 
-Αρχικά παρατηρούμε αρχικά ότι δεν χρησιμοποιούμε συγκεκριμένο τύπο για
+Αρχικά παρατηρούμε ότι δεν χρησιμοποιούμε συγκεκριμένο τύπο για
 GPIO pins. Χρησιμοποιώντας \verb|Input| και \verb|Output| όχι μόνο
 μοντελοποιούμε καλύτερα τον αισθητήρα αλλά αποφεύγουμε μελλοντικά
 runtime errors αν αφήναμε τον χρήστη να προσθέσει ότι pins ήθελε με
@@ -107,7 +107,8 @@ runtime errors αν αφήναμε τον χρήστη να προσθέσει �
 διάστημα, μέχρι ο HCSR04 να βγει από το scope.
 
 Όσο αναφορά τις μεθόδους του struct τις γράφουμε μέσα σε ένα \verb|impl|
-block που διαθέτει τις κατάλληλες μεταβλητές
+block που διαθέτει τις κατάλληλες μεταβλητές. Τα \verb|impl| blocks εκφράζουν
+το πιο μέθοδοι ορίζονται για έναν τύπο $T$.
 
 \begin{lstlisting}[language=Rust]
   impl<'h,Clock: Timer> HCSR04<'h, Clock>
@@ -117,11 +118,89 @@ block που διαθέτει τις κατάλληλες μεταβλητές
 \end{lstlisting}
 
 Οι μεταβλητές αυτές είναι όσο πιο γενικές δυνατόν γίνεται. Θα μπορούσαμε
-κάλιστα να ορίσουμε ένα πιο περιορισμένο implementation:
-
+κάλιστα να ορίσουμε ένα πιο περιορισμένο implementation. Για παράδειγμα να
+ορίσουμε μεθόδους μόνο για τα HCSR04 που έχουν για χρονομετρητή ένα \verb|Alarm|:
 
 \begin{lstlisting}[language=Rust]
+  impl<'h> HCSR04<'h, Alarm>
+  {
+    //Methods go here
+  }
+\end{lstlisting}
 
+Χρειαζόμαστε προφανώς μια συνάρτηση για να δημιουργήσουμε
+το αντικείμενο που αντιπροσωπεύει τον αισθητήρα.
+
+\begin{lstlisting}[language=Rust]
+//inside the impl block
+pub fn new<TRIG: PeripheralOutput + OutputPin, ECHO: PeripheralInput + InputPin>(
+trigger: impl Peripheral<P = TRIG> + 'h,
+echo: impl Peripheral<P = ECHO> + 'h,
+timer: Clock,
+) -> Self {
+Self {
+    trigger: Output::new(trigger, Level::Low),
+    echo: Input::new(echo, Pull::None),
+    clock: timer,
+}
+}
+\end{lstlisting}
+
+Η συνάρτηση έχει δύο παραμέτρους που είναι generic και πρέπει
+να κάνουν implement το Peripheral trait (διαφορετικό από το Peripheral struct).
+
+\begin{enumerate}
+\item Η trigger είναι μια παράμετρος που κάνει implement το Peripheral
+  και είναι PeripheralOutput + OutputPin. Δηλαδή αναγκάζουμε την συνάρτηση
+  να δεχτεί GPIO Pins που λειτουργούν σαν outputs. Έστω ότι για κάποιο
+  λόγο προσπαθήσουμε να καλέσουμε την συνάρτηση με trigger = VCC Pin
+  το πρόγραμμα δεν θα κάνει compile επειδή το VCC Pin δεν κάνει implement
+  το OutputPin.
+\item Η echo είναι μια παράμετρος που κάνει implement το Peripheral
+  και είναι PeripheralInput + InputPin. Δηλαδή αναγκάζουμε την συνάρτηση
+  να δεχτεί GPIO Pins που λειτουργούν σαν inputs. Έστω ότι για κάποιο
+  λόγο προσπαθήσουμε να καλέσουμε την συνάρτηση με echo = VCC Pin
+  το πρόγραμμα δεν θα κάνει compile επειδή το VCC Pin δεν κάνει implement
+  το InputPin.
+\end{enumerate}
+
+Η πιο ενδιαφέρουσα μέθοδος είναι αυτή που υπολογίζει την απόσταση:
+
+\begin{lstlisting}[language=Rust]
+//inside the impl block
+pub fn measure_distance(&mut self) -> f64 {
+    let delay = Delay::new();
+
+    self.clock.start();
+    //Send ultrasonic wave
+    self.trigger.set_high();
+    delay.delay_micros(10);
+    self.trigger.set_low();
+    //Ultra sonic wave is sent
+
+    //Wait until echo bounces back
+    while self.echo.is_low() {
+        //DO NOT DEOPTIMIZE THE LOOP AWAY
+        unsafe { asm!("nop") };
+    }
+
+    //Start timing start = CURRENT_TIME
+    let start = self.clock.now();
+
+    //Wait until echo pin returns to low
+    while self.echo.is_high() {
+        //DO NOT DEOPTIMIZE THE LOOP AWAY
+        unsafe { asm!("nop") };
+    }
+
+    //End timing end = CURRENT_TIME > start
+    let end = self.clock.now();
+
+    let pulse_duration = (end - start).to_micros();
+
+    //return the distance
+    pulse_duration as f64 / 58_f64
+}
 \end{lstlisting}
 
 \subsubsection{MQTT Driver}
