@@ -203,7 +203,573 @@ pub fn measure_distance(&mut self) -> f64 {
 }
 \end{lstlisting}
 
+Η συνάρτηση είναι blocking και υλοποιείται πλήρως συγχρονισμένα. 
+Το πρώτο βήμα είναι να δημιουργήσουμε μια καθυστέρηση με υψηλή ακρίβεια μέσω της εντολής:
+
+\begin{lstlisting}[language=Rust]
+let delay = Delay::new();
+\end{lstlisting}
+
+Έπειτα ξεκινάει το χρονόμετρο ώστε να μπορούμε να μετρήσουμε τη διάρκεια του παλμού echo:
+
+\begin{lstlisting}[language=Rust]
+self.clock.start();
+\end{lstlisting}
+
+Στέλνουμε ένα κύμα υπερήχων στον αισθητήρα σηκώνοντας το trigger pin σε κατάσταση \verb|HIGH| για $10\mu s$:
+
+\begin{lstlisting}[language=Rust]
+self.trigger.set_high();
+delay.delay_micros(10);
+self.trigger.set_low();
+\end{lstlisting}
+
+Μετά, περιμένουμε να επιστρέψει η αντανάκλαση του κύματος. Όσο το
+\verb|echo| pin παραμένει \verb|LOW| (δηλαδή δεν έχει φτάσει ακόμα η
+αντανάκλαση), παραμένουμε σε μια ενεργή αναμονή (busy wait). Το
+\verb|unsafe { asm!("nop") }| διασφαλίζει ότι η αναμονή δεν θα
+βελτιστοποιηθεί εκτός από τον compiler.
+
+\begin{lstlisting}[language=Rust]
+while self.echo.is_low() {
+    unsafe { asm!("nop") };
+}
+\end{lstlisting}
+
+Όταν ανιχνευτεί η μετάβαση σε \verb|HIGH|, ξεκινάει η χρονομέτρηση του παλμού:
+
+\begin{lstlisting}[language=Rust]
+let start = self.clock.now();
+\end{lstlisting}
+
+Ακολουθεί μια δεύτερη αναμονή έως ότου το pin \verb|echo| επιστρέψει σε κατάσταση \verb|LOW|, δηλαδή όταν τελειώσει ο παλμός:
+
+\begin{lstlisting}[language=Rust]
+while self.echo.is_high() {
+    unsafe { asm!("nop") };
+}
+let end = self.clock.now();
+\end{lstlisting}
+
+Η διαφορά των δύο χρονικών στιγμών δίνει την διάρκεια του παλμού σε μικροδευτερόλεπτα:
+
+\begin{lstlisting}[language=Rust]
+let pulse_duration = (end - start).to_micros();
+\end{lstlisting}
+
+Τέλος, επιστρέφουμε την υπολογισμένη απόσταση χρησιμοποιώντας τον τύπο:
+
+\[
+\text{απόσταση (σε εκατοστά)} = \frac{\text{χρόνος (μικροδευτερόλεπτα)}}{58}
+\]
+
+\begin{lstlisting}[language=Rust]
+pulse_duration as f64 / 58_f64
+\end{lstlisting}
+
+Ο συγκεκριμένος τύπος βασίζεται στην ταχύτητα του ήχου στον αέρα και
+λαμβάνει υπόψη το γεγονός ότι ο ήχος διανύει την απόσταση δύο φορές
+(προς και πίσω). Ο αριθμός $58$ προκύπτει από την αναγωγή της εξίσωσης
+$\Delta x = \frac{v \cdot t}{2}$ σε μορφή που επιστρέφει απόσταση σε
+εκατοστά.
+
+Αξιοσημείωτο είναι επίσης το γεγονός ότι δεν χρησιμοποιείται καμία
+\verb|await| ή ασύγχρονη λογική. Αυτό γίνεται για να εξασφαλιστεί
+ακρίβεια και συνέπεια στην μέτρηση χρόνου, καθώς οποιαδήποτε διακοπή
+θα αλλοίωνε το αποτέλεσμα. Η προσέγγιση αυτή είναι ιδανική για το
+portability του κώδικα καθώς μπορεί να τρέξει σε περιβάλλοντα τα οποία
+δεν έχουν executors και κατα συνέπεια async engines. Το να
+χρησιμοποιήσουμε μια μη-async συνάρτηση σε έναν executor είναι πολύ
+απλό οπότε συνήθως αυτός είναι ο τρόπος που προτείνεται το design.
+
 \subsubsection{MQTT Driver}
-Goodbye
+
+Για την χρήση MQTT χρησιμοποιούμε την βιβλιοθήκη \verb|rust-mqtt|
+και την \verb|serde| για να κάνουμε serialize τα structs σε json.
+
+Η βιβλιοθήκη \verb|rust-mqtt| έχει αρκετά προβλήματα και αυτός είναι
+ο λόγος που αποφασίστηκε να δημιουργήσουμε ένα wrapper για το πείραμα.
+
+Μας κάνει export ένα mqtt client struct:
+
+\begin{lstlisting}[language=Rust]
+pub struct MqttClient<'a, T, const MAX_PROPERTIES: usize, R: RngCore>
+where
+    T: Read + Write,
+{
+    raw: RawMqttClient<'a, T, MAX_PROPERTIES, R>,
+}
+\end{lstlisting}
+
+Το οποίο φαίνεται προφανώς να είναι ένα wrapper για το πραγματικό client:
+
+\begin{lstlisting}[language=Rust]
+pub struct RawMqttClient<'a, T, const MAX_PROPERTIES: usize, R: RngCore>
+where
+T: Read + Write,
+{
+connection: Option<NetworkConnection<T>>,
+buffer: &'a mut [u8],
+buffer_len: usize,
+recv_buffer: &'a mut [u8],
+recv_buffer_len: usize,
+config: ClientConfig<'a, MAX_PROPERTIES, R>,
+}
+\end{lstlisting}
+
+Μπορεί κατά πρώτη όψη να μην είναι προφανές το πρόβλημα, αλλά
+ελέγχοντας πλήρως τον κώδικα δεν γίνεται καθόλου διατήρηση (ούτε καν
+αρχικοποίηση) των εσωτερικών buffer του \verb|RawMqttClient| σε κανένα
+από τα παραπάνω structs. Ο χρήστης είναι υπεύθυνος να δημιουργήσει τα buffers,
+το socket που ακούει και στέλνει και να τα περάσει στο client. Αν χρησιμοποιούσαμε
+την βιβλιοθήκη κατευθείαν ο κώδικας θα ήταν δυσανάγνωστος στην καλύτερη περίπτωση οπότε
+προσθέτουμε ένα παραπάνω επίπεδο αφαίρεσης:
+
+\begin{lstlisting}[language=Rust]
+pub struct MqttDriver<'a> {
+client: MqttClient<'a, &'a mut TcpSocket<'static>, 5, CountingRng>,
+}
+
+impl<'a> MqttDriver<'a>
+{
+}
+\end{lstlisting}
+
+Ο σκοπός είναι να κρύψουμε την διαχείριση του TCP socket από
+τον χρήστη οπότε αναγκαστηκα δημιουργούμε ένα global socket
+μόλις ο χρήστης κάνει import την βιβλιοθήκη. Παράλληλα
+αρχικοποιούμε τα buffers για το TCP socket και το MQTT client.
+
+\begin{lstlisting}[language=Rust]
+//Global variables
+//MQTT BUFFERS
+static mut RECV_BUFFER: [u8; 4096] = [0; 4096];
+static mut WRITE_BUFFER: [u8; 4096] = [0; 4096];
+//TCP SOCKET BUFFERS
+static mut RX_BUFFER: [u8; 4096] = [0; 4096];
+static mut TX_BUFFER: [u8; 4096] = [0; 4096];
+//SOCKET STATICCELL
+static mut SOCKET: StaticCell<TcpSocket> = StaticCell::new();
+\end{lstlisting}
+
+Δεν μπορούμε να δημιουργήσουμε κατευθείαν ένα TcpSocket καθώς η
+μέθοδος \verb|TcpSocket::new| έχει το signature
+\verb|new(Stack,&mut [u8],&mut [u8])| όπου stack είναι το network
+interface που δημιουργείτε αργότερα κατά την εκτέλεση του
+προγράμματος. Παράλληλα δεν μπορούμε να κάνουμε allocate μνήμη στο
+Heap επειδή δεν ξέρουμε αν θα υπάρχει απαραίτητα. Το \verb|StaticCell|
+είναι ένας έξυπνος δείκτης που δείχνει στην στατική μνήμη του
+προγράμματος. Γνωρίζουμε το (μέγιστο) μέγεθος του TcpSocket οπότε
+μπορούμε να δεσμεύσουμε μνήμη ίση με αυτό το μέγεθος και να δείξουμε
+σε αυτήν χωρίς να την αρχικοποιήσουμε. Αργότερα όταν παραχθεί ένα
+Stack καλούμε μια μέθοδο \verb|init| για να θέσουμε τον δείχτη
+ίσο με το αποτέλεσμα του \verb|TcpSocket::new|.
+
+Ο χρήστης επίσης θα πρέπει να προσθέσει πολλές δικές του ρυθμίσεις
+οι οποίες μερικές μπορούν και μερικές δεν μπορούν να αποφευχθούν:
+
+\begin{enumerate}
+\item Για πόσο η σύνδεση να είναι Keep-Alive (Optional).
+\item Το μέγιστο μέγεθος των πακέτων (πρέπει να είναι μικρότερο από το μέγεθος των buffers προφανώς) (Optional).
+\item Την IP του εξωτερικού broker (Necessary).
+\item Το ID του ως client (Necessary).
+\item Το Username του ως client (Necessary).
+\item Το Password του ως client (Necessary).
+\end{enumerate}
+
+Αυτό φαίνεται πολύ καλό use-case για το builder pattern:
+
+\begin{lstlisting}[language=Rust]
+//inside MqttDriver impl block
+pub fn new() -> MqttDriverBuilder<'a> {
+MqttDriverBuilder {
+    id: "id",
+    username: "username",
+    pwd: "password",
+    keep_alive: None,
+    packet_size: None,
+    broker: (IpAddress::v4(0, 0, 0, 0), 1883),
+}
+}
+\end{lstlisting}
+
+Όπου το \verb|MqttDriverBuilder| είναι:
+
+\begin{lstlisting}[language=Rust]
+ pub struct MqttDriverBuilder<'a> {
+    id: &'a str,
+    username: &'a str,
+    pwd: &'a str,
+    keep_alive: Option<u16>,
+    packet_size: Option<u32>,
+    broker: (IpAddress, u16),
+}
+
+impl<'a> MqttDriverBuilder<'a> {
+    pub fn with_id(mut self, id: &'a str) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn with_username(mut self, username: &'a str) -> Self {
+        self.username = username;
+        self
+    }
+
+    pub fn with_password(mut self, pwd: &'a str) -> Self {
+        self.pwd = pwd;
+        self
+    }
+
+    pub fn with_keep_alive(mut self, t: u16) -> Self {
+        self.keep_alive = Some(t);
+        self
+    }
+
+    pub fn with_packet_size(mut self, s: u32) -> Self {
+        self.packet_size = Some(s);
+        self
+    }
+
+    pub fn with_broker_ip(mut self, ip: IpAddress, port: u16) -> Self {
+        self.broker = (ip, port);
+        self
+    }
+
+    pub async fn build(self, stack: Stack<'static>) -> Result<MqttDriver<'a>, ConnectError> {
+        let mut conf: ClientConfig<'_, 5, CountingRng> =
+            ClientConfig::new(MqttVersion::MQTTv5, CountingRng(20000));
+        conf.add_client_id(self.id);
+        conf.add_username(self.username);
+        conf.add_password(self.pwd);
+        conf.max_packet_size = self.packet_size.unwrap_or(1024);
+        conf.keep_alive = self.keep_alive.unwrap_or(1000);
+
+        let socket = unsafe { SOCKET.init(TcpSocket::new(stack, &mut RX_BUFFER, &mut TX_BUFFER)) };
+
+        let status = socket.connect(self.broker).await;
+
+        match status {
+            Ok(_) => Ok(MqttDriver {
+                client: MqttClient::new(
+                    socket,
+                    unsafe { &mut WRITE_BUFFER },
+                    4096,
+                    unsafe { &mut RECV_BUFFER },
+                    4096,
+                    conf,
+                ),
+            }),
+            Err(err) => Err(err),
+        }
+    }
+} 
+\end{lstlisting}
+
+Η μέθοδος \verb|build| είναι η τελευταία μέθοδος της αλυσίδας που
+πρέπει να καλεστεί. Καταναλώνει τον builder, αρχικοποιεί τον δείκτη
+στατικής μνήμης, δηλαδή το TcpSocket, και προσπαθεί να δημιουργήσει
+μια TCP σύνδεση με τον broker. Αν αυτή η σύνδεση είναι επιτυχής
+επιστρέφεται το MqttDriver αν όχι επιστρέφετε ένα σφάλμα και ο χρήστης
+είναι υπεύθυνος για το πως θα διαχειριστεί.
+
+Τώρα απομένουν οι βασικές ενέργειες που πρέπει να κάνει το MqttDriver
+
+\begin{enumerate}
+\item Να μπορεί να καθιερώσει μέσο της TCP σύνδεσης μια MQTT σύνδεση.
+\item Να μπορεί να δημοσιεύσει ένα μήνυμα σε ένα topic στον broker.
+\end{enumerate}
+
+Αυτές οι ενέργειες μπορούν να αντιπροσωπευτούν σε δύο ξεχωριστές μεθόδους
+
+\begin{lstlisting}[language=Rust]
+//in MqttDriver impl block
+pub async fn connect(&mut self) -> Result<(), ReasonCode> {
+    self.client.connect_to_broker().await
+}
+
+pub async fn publish(&mut self, message: Message) -> Result<(), ReasonCode> {
+    let mut json = [0u8; 248];
+    let _len = serde_json_core::to_slice(&message, &mut json).unwrap();
+    let a = core::str::from_utf8(&json).unwrap();
+    self.client
+        .send_message("data", a.as_bytes(), QualityOfService::QoS0, false)
+        .await
+}
+\end{lstlisting}
+
+Το \verb|Message| είναι απλώς ένα struct που μέσο macros κάνει implement
+δύο traits του Serde:
+
+\begin{enumerate}
+\item Το Serialize που επιτρέπει την μετατροπή του struct Message σε ένα
+  String της μορφής JSON.
+\item Το Deserialize που επιτρέπει την μετατροπή ενός String της
+  μορφής JSON σε ένα struct Message.
+\end{enumerate}
+
+και φαίνεται έτσι:
+
+\begin{lstlisting}[language=Rust]
+#[derive(Serialize, Deserialize)]
+pub struct Message {
+distance: f64,
+cpu_usage: f64,
+}
+
+impl Message {
+pub fn new(distance: f64, cpu_usage: f64) -> Self {
+    Self {
+        distance,
+        cpu_usage,
+    }
+}
+}
+\end{lstlisting}
+
+Τα traits μας δίνουν πρόσβαση στην συνάρτηση \verb|serde_json_core::to_slice(T,&mut [u8])|
+τα οποία δημιουργούν το JSON σε bytes με βάση την τιμή του Message.
+
 \subsubsection{Main Program}
-Hellogoodbye
+
+Πλέον έχουμε τις κατάλληλες βιβλιοθήκες για να δημιουργήσουμε το
+τελικό project. Για το κύριο πρόγραμμα μπορούμε να ξεκινήσουμε τις
+προφανής global μεταβλητές που χρειάζονται
+
+\begin{lstlisting}[language=Rust]
+//Resources
+static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+static WIFI_CONTROLLER: StaticCell<EspWifiController> = StaticCell::new();
+static STA_STACK_RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
+//Signals
+static RUN_MQTT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+static DISTANCE_SIGNAL: Signal<CriticalSectionRawMutex, f64> = Signal::new();
+static CPU_SIGNAL: Signal<CriticalSectionRawMutex, f64> = Signal::new();
+//WiFi Credentials
+const SSID: &str = "some_ssid";
+const PWD: &str = "some_pwd";
+\end{lstlisting}
+
+Τα StaticCells είναι απλώς δείκτες όπως έχουμε εξηγήσει για έναν Executor, WifiController και
+ένα Stack για ένα WiFi station, θα αρχικοποιηθούν αργότερα. Τα Signals είναι global μεταβλητές
+που σταματάνε την ροή του task αλλά δεν είναι blocking στον executor επιτρέποντας σε άλλα tasks
+να τρέξουνε, εσωτερικά λειτουργούν σαν mutexes.
+
+Χρειαζόμαστε επίσης κάποιου είδους allocator για ένα μικρό heap που είναι απαραίτητο για το WiFi και μόνο:
+
+\begin{lstlisting}[language=Rust]
+extern crate alloc;
+const HEAP_SIZE: usize = 32 * 1024;
+static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
+\end{lstlisting}
+
+Πρέπει να κάνουμε annotate την κύρια συνάρτηση ως main για να ξέρει
+ο linker ότι αυτό είναι το entry point του προγράμματος.
+
+\begin{lstlisting}[language=Rust]
+#[main]
+fn main() -> ! {
+  //program code here
+}
+\end{lstlisting}
+
+Έχουμε ήδη αναφέρει το πως θέλουμε να λειτουργεί ο εκτελεστής έτσι
+ώστε να μπορέσουμε να μετρήσουμε το CPU usage. Πριν αρχίσει το
+πρόγραμμα να τρέχει όμως πρέπει να κάνουμε set up των drivers και
+να αρχικοποιήσουμε σημαντικές μεταβλητές όπως το heap:
+
+\begin{lstlisting}[language=Rust]
+//Inside main
+//Run in max cpu freq
+let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+//get peripherals
+let peripherals = esp_hal::init(config);
+//enable logging
+esp_println::logger::init_logger_from_env();
+//Initialize the heap
+unsafe {
+    esp_alloc::HEAP.add_region(esp_alloc::HeapRegion::new(
+        HEAP.as_mut_ptr() as *mut u8,
+        HEAP_SIZE,
+        esp_alloc::MemoryCapability::Internal.into(),
+    ));
+  }
+
+//Embassy Peripherals
+let timg1 = TimerGroup::new(peripherals.TIMG1);
+let timg0 = TimerGroup::new(peripherals.TIMG0);
+let mut rng = Rng::new(peripherals.RNG);
+let wifi = peripherals.WIFI;
+
+//HCSR04 Peripherals
+let timsys = SystemTimer::new(peripherals.SYSTIMER);
+let trigger = peripherals.GPIO11;
+let echo = peripherals.GPIO10;
+\end{lstlisting}
+
+Η αρχικοποίηση του WiFi φαίνεται λίγο δυσνόητη αλλά
+στην πραγματικότητα είναι απλώς υπερβολικά πολύ verbose
+
+\begin{enumerate}
+\item Πρώτα αρχικοποιούμε τον WifiController με ένα
+  Timer, ένα Rng και ένα Radio Clock.
+\item Έπειτα θέτουμε το mode του controller ως station, αυτό
+  μας επιστρέφει ένα wifi client driver τύπου \verb|WifiDevice|
+  και τον καινούργιο controller με το mode που θέσαμε.
+\item Μετά χρειαζόμαστε ένα configuration για να πούμε στο client το
+πως θα συνδεθεί σε ένα Router (Username,Password,Encryption
+Protocol)και το πως θα πάρει IP. Εμείς θα χρησιμοποιήσουμε το default
+DHCP Client configuration.
+\item Τέλος δημιουργούμε το TCP/IP stack με ένα random seed,τα
+  resources που έχουμε στην στατική μνήμη και τα configurations που
+  δημιουργήσαμε. 
+\end{enumerate}
+
+\begin{lstlisting}[language=Rust]
+    let wifi_controller =
+        &*WIFI_CONTROLLER.init(esp_wifi::init(timg0.timer0, rng, peripherals.RADIO_CLK).unwrap());
+
+    let sta_resources = STA_STACK_RESOURCES.init(StackResources::new());
+    let (wifi_sta, mut controller) =
+        esp_wifi::wifi::new_with_mode(wifi_controller, wifi, WifiStaDevice).unwrap();
+
+    let sta_config = embassy_net::Config::dhcpv4(Default::default());
+    let rng_seed = (rng.random() as u64) << 32 | rng.random() as u64;
+    let conf = Configuration::Client(ClientConfiguration {
+        ssid: String::<32>::from_str(SSID).unwrap(),
+        password: String::<64>::from_str(PWD).unwrap(),
+        auth_method: AuthMethod::WPA2Personal,
+        ..Default::default()
+    });
+    controller.set_configuration(&conf).unwrap();
+    let (sta_stack, sta_runner) = embassy_net::new(wifi_sta, sta_config, sta_resources, rng_seed);
+\end{lstlisting}
+
+Στο τελευταίο βήμα μας επιστρέφετε ένας τύπος \verb|Runner| και το \verb|Stack|. Πλέον ήμαστε έτοιμοι
+να αρχικοποιήσουμε το embassy και τον HCSR04 και τον executor:
+
+\begin{lstlisting}[language=Rust]
+//Embassy Initialization
+esp_hal_embassy::init(timg1.timer0);
+//HCSR04
+let hcsr04 = HCSR04::new(trigger, echo, timsys.alarm0);
+//MQTT Driver
+
+//Executor
+let executor = EXECUTOR.init(Executor::new(3 as *mut ()));
+let spawner = executor.spawner();
+spawner.must_spawn(sta_connection(sta_runner));
+spawner.must_spawn(wifi_connection(controller));
+spawner.must_spawn(mqtt(sta_stack));
+spawner.must_spawn(measure_distance(hcsr04));
+//Spawn tasks
+let mut acc = 0.0;
+let start_time = Instant::now();
+loop {
+    let start_pol = Instant::now();
+    unsafe { executor.poll() };
+    let end_pol = Instant::now();
+    let elapsed_pol = end_pol.duration_since(start_pol).as_ticks() as f64;
+    acc += elapsed_pol;
+    let total_elapsed = start_time.elapsed().as_ticks() as f64;
+    CPU_SIGNAL.signal(acc * 100_f64 / total_elapsed);
+}
+\end{lstlisting}
+
+Προφανώς δεν έχουμε γράψει ακόμα τα tasks που κάνουν spawn:
+
+\begin{enumerate}
+  \item Το \verb|sta_connection| απλώς θα καλεί την μέθοδο του runner \verb|runner.run()|.
+  \item Το \verb|wifi_connection| θα περιμένει μέχρι το station είναι έτοιμο. Μόλις είναι θα ξυπνήσει το mqtt.
+  \item Το \verb|mqtt| κοιμάται μέχρι να ξυπνήσει από το \verb|wifi_connection| μέσο ενώς \verb|RUN_MQTT| signal.
+    Μόλις ξυπνήσει ελέγχει αν έχει λάβει ipv4 και μπορεί να επικοινωνήσει με τον έξω κόσμο.
+    Μόλις λάβει ηλεκτρονική διεύθυνση συνδέεται στον broker και περιμένει για τα signals CPU και DISTANCE τα οποία μόλις
+    λάβει τα στέλνει στον broker.
+  \item Το \verb|measure_distance| μετράει την απόσταση που υπολογίζει ο αισθητήρας HCSR04 μέσο του driver και στέλνει μέσο
+    του signal την τιμή αυτής της απόστασης στο mqtt.    
+\end{enumerate}
+
+Ένα task είναι απλώς μια συνάρτηση που είναι annotated με ένα macro \verb|#[task]|:
+
+\begin{lstlisting}[language=Rust]
+#[task]
+async fn sta_connection(mut runner: Runner<'static, WifiDevice<'static, WifiStaDevice>>) {
+runner.run().await;
+}
+
+#[task]
+async fn wifi_connection(mut controller: WifiController<'static>) {
+
+controller.start_async().await.unwrap();
+match controller.connect_async().await {
+    Ok(_) => (),
+    Err(err) => info!("Error connecting {:#?}", err),
+}
+
+loop {
+    match esp_wifi::wifi::sta_state() {
+        WifiState::StaConnected => {
+            //Signal status that station has connected.
+            RUN_MQTT.signal(true);
+            break;
+        }
+        e => info!("Other {:#?}", e),
+    }
+    TaskTimer::after_millis(500).await;
+}
+}
+
+#[task]
+async fn measure_distance(mut sensor: HCSR04<'static, Alarm>) {
+loop {
+    DISTANCE_SIGNAL.signal(sensor.measure_distance());
+    TaskTimer::after_millis(250).await;
+}
+}
+
+#[task]
+async fn mqtt(sta_stack: Stack<'static>) {
+//Wait for signal that WiFi_Sta has connected to a network
+let _run = RUN_MQTT.wait().await;
+
+//Wait to get IP.
+loop {
+    if let Some(config) = sta_stack.config_v4() {
+        break;
+    }
+    TaskTimer::after_millis(500).await;
+}
+//TCP Connect to Broker
+
+let mqtt_driver = MqttDriver::new()
+    .with_broker_ip(IpAddress::v4(77, 237, 242, 215), 1883)
+    .with_id("esp32c6Client")
+    .with_password("chris")
+    .with_username("chris")
+    .with_packet_size(1024)
+    .with_keep_alive(300)
+    .build(sta_stack)
+    .await;
+
+match mqtt_driver {
+    Ok(mut mqtt) => {
+        //MQTT connect to broker
+        let status = mqtt.connect().await;
+        match status {
+            Ok(_) => loop {
+                let current_distance = DISTANCE_SIGNAL.wait().await;
+                let cpu_usage = CPU_SIGNAL.wait().await;
+                let msg = Message::new(current_distance, cpu_usage);
+
+                if let Err(err) = mqtt.publish(msg).await {
+                    info!("Received reason code {:#?}", err);
+                }
+            },
+            Err(err) => info!("Mqtt Error: {:#?}", err),
+        }
+    }
+    Err(err) => info!("Tcp Error: {:#?}", err),
+}
+}
+\end{lstlisting}
+
