@@ -477,7 +477,7 @@ impl<'a> MqttDriverBuilder<'a> {
 
 \begin{enumerate}
 \item Να μπορεί να καθιερώσει μέσο της TCP σύνδεσης μια MQTT σύνδεση.
-\item Να μπορεί να δημοσιεύσει ένα μήνυμα σε ένα topic στον broker.
+\item Να μπορεί να δημοσιεύσει μηνύματα σε topics στον broker.
 \end{enumerate}
 
 Αυτές οι ενέργειες μπορούν να αντιπροσωπευτούν σε δύο ξεχωριστές μεθόδους
@@ -488,47 +488,81 @@ pub async fn connect(&mut self) -> Result<(), ReasonCode> {
     self.client.connect_to_broker().await
 }
 
-pub async fn publish(&mut self, message: Message) -> Result<(), ReasonCode> {
-    let mut json = [0u8; 248];
-    let _len = serde_json_core::to_slice(&message, &mut json).unwrap();
-    let a = core::str::from_utf8(&json).unwrap();
-    self.client
-        .send_message("data", a.as_bytes(), QualityOfService::QoS0, false)
-        .await
+pub async fn publish_sensor(&mut self, message: SensorMessage) -> Result<(), ReasonCode> {
+let mut json = [0u8; 248];
+let len = serde_json_core::to_slice(&message, &mut json).unwrap();
+let a = core::str::from_utf8(&json[..len]).unwrap();
+self.client
+    .send_message(
+        "sensors/distance",
+        a.as_bytes(),
+        QualityOfService::QoS0,
+        false,
+    )
+    .await
+}
+
+pub async fn publish_device(&mut self, message: DeviceMessage) -> Result<(), ReasonCode> {
+let mut json = [0u8; 248];
+let len = serde_json_core::to_slice(&message, &mut json).unwrap();
+let a = core::str::from_utf8(&json[..len]).unwrap();
+self.client
+    .send_message(
+        "device/perfomance",
+        a.as_bytes(),
+        QualityOfService::QoS0,
+        false,
+    )
+    .await
 }
 \end{lstlisting}
 
-Το \verb|Message| είναι απλώς ένα struct που μέσο macros κάνει implement
+Τα \verb|SensorMessage| και \verb|DeviceMessage| είναι απλώς structs που μέσο macros κάνουν implement
 δύο traits του Serde:
 
 \begin{enumerate}
-\item Το Serialize που επιτρέπει την μετατροπή του struct Message σε ένα
+\item Το Serialize που επιτρέπει την μετατροπή του struct message σε ένα
   String της μορφής JSON.
 \item Το Deserialize που επιτρέπει την μετατροπή ενός String της
-  μορφής JSON σε ένα struct Message.
+  μορφής JSON σε ένα struct message.
 \end{enumerate}
 
-και φαίνεται έτσι:
+και φαίνονται έτσι:
 
 \begin{lstlisting}[language=Rust]
 #[derive(Serialize, Deserialize)]
-pub struct Message {
+pub struct SensorMessage {
 distance: f64,
-cpu_usage: f64,
 }
 
-impl Message {
-pub fn new(distance: f64, cpu_usage: f64) -> Self {
+impl SensorMessage {
+pub fn new(distance: f64) -> Self {
+    Self { distance }
+}
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DeviceMessage {
+cpu_usage: f64,
+current_mem_usage: usize,
+}
+
+impl DeviceMessage {
+pub fn new(cpu_usage: f64, current_mem_usage: usize) -> Self {
     Self {
-        distance,
         cpu_usage,
+        current_mem_usage,
     }
 }
 }
 \end{lstlisting}
 
 Τα traits μας δίνουν πρόσβαση στην συνάρτηση \verb|serde_json_core::to_slice(T,&mut [u8])|
-τα οποία δημιουργούν το JSON σε bytes με βάση την τιμή του Message.
+τα οποία δημιουργούν το JSON σε bytes με βάση την τιμή του Message. Παρατηρούμε ότι κατά
+την δημοσίευση των μηνυμάτων δεν στέλνουμε ολόκληρο το buffer \verb|&json| αλλά το
+\verb|&json[..len]| δηλαδή το buffer μέχρι το τελευταίο byte που αντιπροσωπεύει ένα
+char. Έαν δεν γίνει αυτή η εξακρίβωση το telegraf θα δυσκολευτεί να κάνει parse το
+json και πιθανότατα θα καταλήξει σε σφάλμα.
 
 \subsubsection{Main Program}
 
@@ -545,6 +579,8 @@ static STA_STACK_RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
 static RUN_MQTT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
 static DISTANCE_SIGNAL: Signal<CriticalSectionRawMutex, f64> = Signal::new();
 static CPU_SIGNAL: Signal<CriticalSectionRawMutex, f64> = Signal::new();
+static MEM_SIGNAL: Signal<CriticalSectionRawMutex, usize> = Signal::new();
+
 //WiFi Credentials
 const SSID: &str = "some_ssid";
 const PWD: &str = "some_pwd";
@@ -673,6 +709,8 @@ loop {
     acc += elapsed_pol;
     let total_elapsed = start_time.elapsed().as_ticks() as f64;
     CPU_SIGNAL.signal(acc * 100_f64 / total_elapsed);
+    let used_mem = esp_alloc::HEAP.used();
+    MEM_SIGNAL.signal(used_mem);
 }
 \end{lstlisting}
 
@@ -758,10 +796,16 @@ match mqtt_driver {
         match status {
             Ok(_) => loop {
                 let current_distance = DISTANCE_SIGNAL.wait().await;
-                let cpu_usage = CPU_SIGNAL.wait().await;
-                let msg = Message::new(current_distance, cpu_usage);
+                let msg = SensorMessage::new(current_distance);
 
-                if let Err(err) = mqtt.publish(msg).await {
+                if let Err(err) = mqtt.publish_sensor(msg).await {
+                    info!("Received reason code {:#?}", err);
+                }
+
+                let cpu_usage = CPU_SIGNAL.wait().await;
+                let mem_usage = MEM_SIGNAL.wait().await;
+                let msg = DeviceMessage::new(cpu_usage, mem_usage);
+                if let Err(err) = mqtt.publish_device(msg).await {
                     info!("Received reason code {:#?}", err);
                 }
             },
